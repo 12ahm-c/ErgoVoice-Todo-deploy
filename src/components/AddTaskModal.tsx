@@ -25,10 +25,19 @@ function similarity(s1: string, s2: string) {
 
 export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
   const [title, setTitle] = useState('');
+  const [tempTitle, setTempTitle] = useState('');
+
   const [description, setDescription] = useState('');
+  const [tempDescription, setTempDescription] = useState('');
+
   const [category, setCategory] = useState<'Perso' | 'Travail' | 'Études'>('Perso');
+  const [tempCategory, setTempCategory] = useState<'Perso' | 'Travail' | 'Études' | ''>('');
+
   const [priority, setPriority] = useState<'Haute' | 'Moyenne' | 'Basse'>('Moyenne');
+  const [tempPriority, setTempPriority] = useState<'Haute' | 'Moyenne' | 'Basse' | ''>('');
+
   const [dueDate, setDueDate] = useState('');
+  const [tempDueDate, setTempDueDate] = useState('');
 
   const [listening, setListening] = useState(false);
   const steps: Array<'title'|'description'|'category'|'priority'|'dueDate'|'final'> =
@@ -37,6 +46,7 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
   const step = steps[stepIndex];
   const recognitionRef = useRef<any>(null);
 
+  // الإعدادات العامة للتعرف على الصوت
   useEffect(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition ||
@@ -45,7 +55,7 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
 
     const recognition = new SpeechRecognition();
     recognition.lang = "fr-FR";
-    recognition.continuous = false;
+    recognition.continuous = false; // كل مرة تسجيل جملة واحدة
     recognition.interimResults = false;
 
     recognition.onstart = () => setListening(true);
@@ -54,17 +64,14 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
     recognition.onresult = (event: any) => {
       const rawText = event.results[0][0].transcript.trim();
       const text = rawText.toLowerCase();
-      let valid = false;
 
       switch (step) {
         case 'title':
-          setTitle(rawText);
-          valid = true;
+          setTempTitle(rawText);
           break;
 
         case 'description':
-          setDescription(rawText);
-          valid = true;
+          setTempDescription(rawText);
           break;
 
         case 'category': {
@@ -77,10 +84,7 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
             const score = similarity(text,key);
             if(score>best.score) best={key,score};
           });
-          if(best.score>0.5){
-            setCategory(mapCat[best.key]);
-            valid=true;
-          }
+          if(best.score>0.5) setTempCategory(mapCat[best.key]);
           break;
         }
 
@@ -92,59 +96,74 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
           };
           let best = { key:'', score:0 };
           Object.keys(mapPrio).forEach(key=>{
-            const score=similarity(text,key);
+            const score = similarity(text,key);
             if(score>best.score) best={key,score};
           });
-          if(best.score>0.5){
-            setPriority(mapPrio[best.key]);
-            valid=true;
-          }
+          if(best.score>0.5) setTempPriority(mapPrio[best.key]);
           break;
         }
 
         case 'dueDate': {
           const parsedDate = new Date(rawText);
-          if (!isNaN(parsedDate.getTime())) {
-            const isoDate = parsedDate.toISOString().split('T')[0];
-            setDueDate(isoDate);
-            valid = true;
-          }
+          if(!isNaN(parsedDate.getTime())) setTempDueDate(parsedDate.toISOString().split('T')[0]);
           break;
         }
 
         case 'final': {
-          const mapFinal: Record<string,'Ajouter'|'Annuler'> = {'ajouter':'Ajouter','annuler':'Annuler'};
-          let best = { key:'', score:0 };
-          Object.keys(mapFinal).forEach(key=>{
-            const score = similarity(text,key);
-            if(score>best.score) best={key,score};
-          });
-          if(best.score>0.5){
-            valid=true;
-            if(mapFinal[best.key]==='Ajouter'){
-              if(title.trim()) onAdd(title, category, priority, description||undefined, dueDate? new Date(dueDate):undefined);
-            }
-            onClose();
-          }
-          break;
-        }
-      }
+  const mapFinal: Record<string,'Ajouter'|'Annuler'> = {'ajouter':'Ajouter','annuler':'Annuler'};
+  let best = { key:'', score:0 };
+  Object.keys(mapFinal).forEach(key=>{
+    const score = similarity(text,key);
+    if(score>best.score) best={key,score};
+  });
+  if(best.score>0.5){
+    if(mapFinal[best.key]==='Ajouter'){
+      if(tempTitle.trim()) setTitle(tempTitle);
+      if(tempDescription) setDescription(tempDescription);
+      if(tempCategory) setCategory(tempCategory);
+      if(tempPriority) setPriority(tempPriority);
+      if(tempDueDate) setDueDate(tempDueDate);
+      onAdd(
+        tempTitle,
+        tempCategory || category,
+        tempPriority || priority,
+        tempDescription || undefined,
+        tempDueDate ? new Date(tempDueDate) : undefined
+      );
+    }
+    onClose();
+  }
+  break;
+}
 
-      if(valid) setStepIndex(prev => (prev + 1) % steps.length);
+   }
     };
 
     recognitionRef.current = recognition;
-  }, [step, title, description, category, priority, dueDate, onAdd, onClose]);
+  }, [step]);
 
   const startListening = () => {
     try{recognitionRef.current?.start()}catch(err){console.error(err);}
   }
   const stopListening = () => {
-    try{recognitionRef.current?.stop();setListening(false)}catch(err){console.error(err);}
+    try{recognitionRef.current?.stop(); setListening(false)}catch(err){console.error(err);}
   }
+
   const nextStep = () => setStepIndex(prev => (prev+1)%steps.length);
 
-  const handleSubmit=(e:React.FormEvent)=>{
+  const handleConfirm = () => {
+    // نقل القيمة المؤقتة للقيمة النهائية
+    switch(step){
+      case 'title': setTitle(tempTitle); break;
+      case 'description': setDescription(tempDescription); break;
+      case 'category': if(tempCategory) setCategory(tempCategory); break;
+      case 'priority': if(tempPriority) setPriority(tempPriority); break;
+      case 'dueDate': if(tempDueDate) setDueDate(tempDueDate); break;
+    }
+    nextStep();
+  }
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if(!title.trim()) return;
     onAdd(title, category, priority, description||undefined, dueDate? new Date(dueDate):undefined);
@@ -170,9 +189,49 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
             <button type="button" onClick={stopListening} className="px-4 py-2 bg-red-600 text-white rounded">
               ⏹ Arrêter
             </button>
-            {step!=='final' && <button type="button" onClick={nextStep} className="px-4 py-2 bg-blue-600 text-white rounded">Suivant ➜</button>}
           </div>
-          {step==='final' && <p className="mt-2 text-sm">🎯 Dites "Ajouter" ou "Annuler"</p>}
+
+          {/* عرض النتيجة المؤقتة مع أزرار التأكيد أو إعادة التسجيل */}
+          {step === 'title' && tempTitle && (
+            <div className="mt-2 flex gap-2 items-center">
+              <p className="flex-1">🎤 Vous avez dit: <strong>{tempTitle}</strong></p>
+              <button type="button" onClick={handleConfirm} className="px-3 py-1 bg-green-600 text-white rounded">Confirmer</button>
+              <button type="button" onClick={() => { setTempTitle(''); startListening(); }} className="px-3 py-1 bg-red-600 text-white rounded">Réessayer</button>
+            </div>
+          )}
+
+          {step === 'description' && tempDescription && (
+            <div className="mt-2 flex gap-2 items-center">
+              <p className="flex-1">🎤 Vous avez dit: <strong>{tempDescription}</strong></p>
+              <button type="button" onClick={handleConfirm} className="px-3 py-1 bg-green-600 text-white rounded">Confirmer</button>
+              <button type="button" onClick={() => { setTempDescription(''); startListening(); }} className="px-3 py-1 bg-red-600 text-white rounded">Réessayer</button>
+            </div>
+          )}
+
+          {step === 'category' && tempCategory && (
+            <div className="mt-2 flex gap-2 items-center">
+              <p className="flex-1">🎤 Catégorie détectée: <strong>{tempCategory}</strong></p>
+              <button type="button" onClick={handleConfirm} className="px-3 py-1 bg-green-600 text-white rounded">Confirmer</button>
+              <button type="button" onClick={() => { setTempCategory(''); startListening(); }} className="px-3 py-1 bg-red-600 text-white rounded">Réessayer</button>
+            </div>
+          )}
+
+          {step === 'priority' && tempPriority && (
+            <div className="mt-2 flex gap-2 items-center">
+              <p className="flex-1">🎤 Priorité détectée: <strong>{tempPriority}</strong></p>
+              <button type="button" onClick={handleConfirm} className="px-3 py-1 bg-green-600 text-white rounded">Confirmer</button>
+              <button type="button" onClick={() => { setTempPriority(''); startListening(); }} className="px-3 py-1 bg-red-600 text-white rounded">Réessayer</button>
+            </div>
+          )}
+
+          {step === 'dueDate' && tempDueDate && (
+            <div className="mt-2 flex gap-2 items-center">
+              <p className="flex-1">🎤 Date détectée: <strong>{tempDueDate}</strong></p>
+              <button type="button" onClick={handleConfirm} className="px-3 py-1 bg-green-600 text-white rounded">Confirmer</button>
+              <button type="button" onClick={() => { setTempDueDate(''); startListening(); }} className="px-3 py-1 bg-red-600 text-white rounded">Réessayer</button>
+            </div>
+          )}
+
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto max-h-[calc(90vh-80px)]">
@@ -181,6 +240,8 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
             <input type="text" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ex: Réviser..." className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm" autoFocus required/>
           </div>
 
+          {/* الباقي يبقى كما هو مع الحقول النصية والأزرار */}
+          {/* Description, Category, Priority, Date, Submit Buttons */}
           <div>
             <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
               <FileText className="w-4 h-4"/> Description (optionnelle)

@@ -77,7 +77,7 @@ export function FilterBar({ currentFilter, onFilterChange }: FilterBarProps) {
       });
 
       // Si la similarité est supérieure à 0.5 (modifiable), appliquer le filtre
-      if (bestMatch.score > 0.5) {
+      if (bestMatch.score > 0.35) {
         onFilterChange(voiceMap[bestMatch.key]);
       }
     };

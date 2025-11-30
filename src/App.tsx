@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { TaskList } from './components/TaskList';
 import { VoiceControlPanel } from './components/VoiceControlPanel';
-import { StatsPanel } from './components/StatsPanel';
 export interface Task {
   id: string;
   title: string;
@@ -261,7 +260,6 @@ export default function App() {
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-12">
         {/* Stats Panel */}
-        <StatsPanel tasks={tasks} />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mt-6">
           {/* Colonne de gauche - Liste des tâches (70%) */}
