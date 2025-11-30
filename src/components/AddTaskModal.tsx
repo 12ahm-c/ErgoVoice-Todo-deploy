@@ -1,5 +1,5 @@
 import { X, Calendar, Tag, Flag, FileText } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface AddTaskModalProps {
   onClose: () => void;
@@ -12,6 +12,17 @@ interface AddTaskModalProps {
   ) => void;
 }
 
+function similarity(s1: string, s2: string) {
+  const longer = s1.length > s2.length ? s1 : s2;
+  const shorter = s1.length > s2.length ? s2 : s1;
+  if (!longer.length) return 1;
+  let same = 0;
+  for (let i = 0; i < shorter.length; i++) {
+    if (shorter[i] === longer[i]) same++;
+  }
+  return same / longer.length;
+}
+
 export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -19,165 +30,200 @@ export function AddTaskModal({ onClose, onAdd }: AddTaskModalProps) {
   const [priority, setPriority] = useState<'Haute' | 'Moyenne' | 'Basse'>('Moyenne');
   const [dueDate, setDueDate] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [listening, setListening] = useState(false);
+  const steps: Array<'title'|'description'|'category'|'priority'|'dueDate'|'final'> =
+    ['title','description','category','priority','dueDate','final'];
+  const [stepIndex, setStepIndex] = useState(0);
+  const step = steps[stepIndex];
+  const recognitionRef = useRef<any>(null);
+
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "fr-FR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
+
+    recognition.onresult = (event: any) => {
+      const rawText = event.results[0][0].transcript.trim();
+      const text = rawText.toLowerCase();
+      let valid = false;
+
+      switch (step) {
+        case 'title':
+          setTitle(rawText);
+          valid = true;
+          break;
+
+        case 'description':
+          setDescription(rawText);
+          valid = true;
+          break;
+
+        case 'category': {
+          const mapCat: Record<string,'Perso'|'Travail'|'Études'> = {
+            'perso':'Perso','personal':'Perso','travail':'Travail','travaux':'Travail',
+            'études':'Études','etudes':'Études','study':'Études'
+          };
+          let best = { key:'', score:0 };
+          Object.keys(mapCat).forEach(key => {
+            const score = similarity(text,key);
+            if(score>best.score) best={key,score};
+          });
+          if(best.score>0.5){
+            setCategory(mapCat[best.key]);
+            valid=true;
+          }
+          break;
+        }
+
+        case 'priority': {
+          const mapPrio: Record<string,'Haute'|'Moyenne'|'Basse'> = {
+            'haute':'Haute','high':'Haute',
+            'moyenne':'Moyenne','medium':'Moyenne',
+            'basse':'Basse','low':'Basse'
+          };
+          let best = { key:'', score:0 };
+          Object.keys(mapPrio).forEach(key=>{
+            const score=similarity(text,key);
+            if(score>best.score) best={key,score};
+          });
+          if(best.score>0.5){
+            setPriority(mapPrio[best.key]);
+            valid=true;
+          }
+          break;
+        }
+
+        case 'dueDate': {
+          const parsedDate = new Date(rawText);
+          if (!isNaN(parsedDate.getTime())) {
+            const isoDate = parsedDate.toISOString().split('T')[0];
+            setDueDate(isoDate);
+            valid = true;
+          }
+          break;
+        }
+
+        case 'final': {
+          const mapFinal: Record<string,'Ajouter'|'Annuler'> = {'ajouter':'Ajouter','annuler':'Annuler'};
+          let best = { key:'', score:0 };
+          Object.keys(mapFinal).forEach(key=>{
+            const score = similarity(text,key);
+            if(score>best.score) best={key,score};
+          });
+          if(best.score>0.5){
+            valid=true;
+            if(mapFinal[best.key]==='Ajouter'){
+              if(title.trim()) onAdd(title, category, priority, description||undefined, dueDate? new Date(dueDate):undefined);
+            }
+            onClose();
+          }
+          break;
+        }
+      }
+
+      if(valid) setStepIndex(prev => (prev + 1) % steps.length);
+    };
+
+    recognitionRef.current = recognition;
+  }, [step, title, description, category, priority, dueDate, onAdd, onClose]);
+
+  const startListening = () => {
+    try{recognitionRef.current?.start()}catch(err){console.error(err);}
+  }
+  const stopListening = () => {
+    try{recognitionRef.current?.stop();setListening(false)}catch(err){console.error(err);}
+  }
+  const nextStep = () => setStepIndex(prev => (prev+1)%steps.length);
+
+  const handleSubmit=(e:React.FormEvent)=>{
     e.preventDefault();
-    if (title.trim()) {
-      onAdd(
-        title,
-        category,
-        priority,
-        description || undefined,
-        dueDate ? new Date(dueDate) : undefined
-      );
-      onClose();
-    }
-  };
+    if(!title.trim()) return;
+    onAdd(title, category, priority, description||undefined, dueDate? new Date(dueDate):undefined);
+    onClose();
+  }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden animate-in zoom-in duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden">
+        <div className="px-4 sm:px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-indigo-600 to-purple-600">
           <h3 className="text-white">Nouvelle tâche</h3>
-          <button
-            onClick={onClose}
-            type="button"
-            className="p-1 hover:bg-white/20 rounded-lg transition-colors"
-            aria-label="Fermer"
-          >
+          <button onClick={onClose} type="button" className="p-1 hover:bg-white/20 rounded-lg">
             <X className="w-5 h-5 text-white" />
           </button>
         </div>
 
-        {/* Form - Scrollable */}
-        <div className="overflow-y-auto max-h-[calc(90vh-80px)]">
-          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5">
-            {/* Title */}
-            <div>
-              <label className="block text-sm text-slate-700 mb-2">
-                Titre de la tâche *
-              </label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Ex: Réviser pour l'examen..."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm"
-                autoFocus
-                required
-              />
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
-                <FileText className="w-4 h-4" />
-                Description (optionnelle)
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ajoutez des détails..."
-                rows={3}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm resize-none"
-              />
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
-                <Tag className="w-4 h-4" />
-                Catégorie
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['Perso', 'Travail', 'Études'] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setCategory(cat)}
-                    className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all ${
-                      category === cat
-                        ? cat === 'Perso'
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : cat === 'Travail'
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'bg-purple-600 text-white shadow-md'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Priority */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
-                <Flag className="w-4 h-4" />
-                Priorité
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['Haute', 'Moyenne', 'Basse'] as const).map((prio) => (
-                  <button
-                    key={prio}
-                    type="button"
-                    onClick={() => setPriority(prio)}
-                    className={`px-3 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm transition-all ${
-                      priority === prio
-                        ? prio === 'Haute'
-                          ? 'bg-red-600 text-white shadow-md'
-                          : prio === 'Moyenne'
-                          ? 'bg-amber-600 text-white shadow-md'
-                          : 'bg-slate-600 text-white shadow-md'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    {prio}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Due Date */}
-            <div>
-              <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
-                <Calendar className="w-4 h-4" />
-                Date d'échéance (optionnelle)
-              </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm"
-              />
-            </div>
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-4">
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl transition-colors text-sm sm:text-base"
-              >
-                Annuler
-              </button>
-              <button
-                type="submit"
-                disabled={!title.trim()}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-xl transition-all shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-              >
-                Ajouter
-              </button>
-            </div>
-          </form>
+        <div className="p-3 border rounded-xl mt-3 mb-4 bg-slate-50">
+          <p className="text-sm mb-2">🎤 Champ actuel: <strong>{step}</strong></p>
+          <div className="flex gap-2">
+            <button type="button" onClick={startListening} className="px-4 py-2 bg-green-600 text-white rounded">
+              🎙 Démarrer
+            </button>
+            <button type="button" onClick={stopListening} className="px-4 py-2 bg-red-600 text-white rounded">
+              ⏹ Arrêter
+            </button>
+            {step!=='final' && <button type="button" onClick={nextStep} className="px-4 py-2 bg-blue-600 text-white rounded">Suivant ➜</button>}
+          </div>
+          {step==='final' && <p className="mt-2 text-sm">🎯 Dites "Ajouter" ou "Annuler"</p>}
         </div>
+
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-5 overflow-y-auto max-h-[calc(90vh-80px)]">
+          <div>
+            <label className="block text-sm text-slate-700 mb-2">Titre *</label>
+            <input type="text" value={title} onChange={e=>setTitle(e.target.value)} placeholder="Ex: Réviser..." className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm" autoFocus required/>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
+              <FileText className="w-4 h-4"/> Description (optionnelle)
+            </label>
+            <textarea value={description} onChange={e=>setDescription(e.target.value)} placeholder="Ajoutez des détails..." rows={3} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm resize-none"/>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
+              <Tag className="w-4 h-4"/> Catégorie
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['Perso','Travail','Études'] as const).map(cat=>(
+                <button key={cat} type="button" onClick={()=>setCategory(cat)}
+                  className={`px-3 py-2 rounded-xl text-xs transition-all ${category===cat?'bg-indigo-600 text-white shadow-md':'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{cat}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
+              <Flag className="w-4 h-4"/> Priorité
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['Haute','Moyenne','Basse'] as const).map(prio=>(
+                <button key={prio} type="button" onClick={()=>setPriority(prio)}
+                  className={`px-3 py-2 rounded-xl text-xs transition-all ${priority===prio?'bg-red-600 text-white shadow-md':'bg-slate-100 text-slate-700 hover:bg-slate-200'}`}>{prio}</button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="flex items-center gap-2 text-sm text-slate-700 mb-2">
+              <Calendar className="w-4 h-4"/> Date (optionnelle)
+            </label>
+            <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full px-4 py-3 bg-slate-50 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 text-sm"/>
+          </div>
+
+          <div className="flex gap-3 pt-4">
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-3 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-sm">Annuler</button>
+            <button type="submit" disabled={!title.trim()} className="flex-1 px-4 py-3 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-xl disabled:opacity-50">Ajouter</button>
+          </div>
+        </form>
       </div>
     </div>
   );

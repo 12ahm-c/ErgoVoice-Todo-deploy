@@ -3,7 +3,6 @@ import { Header } from './components/Header';
 import { TaskList } from './components/TaskList';
 import { VoiceControlPanel } from './components/VoiceControlPanel';
 import { StatsPanel } from './components/StatsPanel';
-
 export interface Task {
   id: string;
   title: string;
@@ -267,6 +266,8 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8 mt-6">
           {/* Colonne de gauche - Liste des tâches (70%) */}
           <div className="lg:col-span-2 order-2 lg:order-1">
+
+            
             <TaskList
               tasks={tasks}
               filter={filter}
