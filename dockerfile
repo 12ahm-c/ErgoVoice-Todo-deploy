@@ -1,7 +1,7 @@
 # ==========================
 # المرحلة 1: البناء
 # ==========================
-FROM node:20-alpine AS build
+FROM node:20-bullseye AS build
 
 # تحديد مجلد العمل داخل الحاوية
 WORKDIR /app
