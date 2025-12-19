@@ -46,12 +46,9 @@ pipeline {
         stage('Deploy to Dev') {
             steps {
                 script {
-                    // إيقاف الحاوية القديمة إن وجدت
-                    sh 'docker stop todo-app-dev || true'
-                    sh 'docker rm todo-app-dev || true'
-                    // تشغيل الحاوية الجديدة
-                    sh "docker run -d -p 3000:3000 --name todo-app-dev ${DOCKER_IMAGE_NAME}:${env.BUILD_ID}"
-                }
+sh 'docker stop ergovoice-dev || true'
+sh 'docker rm ergovoice-dev || true'
+sh "docker run -d -p 3000:3000 --name ergovoice-dev ${DOCKER_IMAGE_NAME}:${env.BUILD_ID}"                }
             }
         }
     }
