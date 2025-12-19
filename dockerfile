@@ -1,33 +1,24 @@
-# ==========================
-# المرحلة 1: البناء
-# ==========================
+# مرحلة البناء
 FROM node:20-bullseye AS build
-
-# تحديد مجلد العمل داخل الحاوية
 WORKDIR /app
 
-# نسخ ملفات package.json و package-lock.json فقط لتسريع البناء
+# نسخ ملفات package
 COPY package*.json ./
 
-# تثبيت الحزم بشكل نظيف ومتوافق مع peer dependencies
+# تثبيت أدوات البناء لحل مشاكل Rollup native
+RUN apt-get update && apt-get install -y build-essential python3
+
+# تثبيت الحزم
 RUN npm ci --legacy-peer-deps
 
-# نسخ باقي ملفات المشروع
+# نسخ باقي المشروع
 COPY . .
 
-# استخدام npx لتشغيل Vite بدون الحاجة لتثبيت global
+# بناء Vite
 RUN npx vite build
 
-# ==========================
-# المرحلة 2: الخادم (Nginx)
-# ==========================
+# مرحلة الخادم
 FROM nginx:alpine
-
-# نسخ الملفات الناتجة من البناء إلى مجلد Nginx
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# تحديد المنفذ الذي سيستمع له Nginx
-EXPOSE 3000
-
-# تشغيل Nginx في foreground
+EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
